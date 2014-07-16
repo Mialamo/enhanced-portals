@@ -11,6 +11,7 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChunkCoordinates;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.ForgeDirection;
+import buildcraft.api.power.IPowerEmitter;
 import buildcraft.api.power.IPowerReceptor;
 import buildcraft.api.power.PowerHandler;
 import buildcraft.api.power.PowerHandler.PowerReceiver;
@@ -30,14 +31,16 @@ import enhancedportals.network.GuiHandler;
 import enhancedportals.utility.GeneralUtils;
 
 @InterfaceList(value = { @Interface(iface = "dan200.computercraft.api.peripheral.IPeripheral", modid = EnhancedPortals.MODID_COMPUTERCRAFT), @Interface(iface = "li.cil.oc.api.network.SimpleComponent", modid = EnhancedPortals.MODID_OPENCOMPUTERS) })
-public class TileTransferEnergy extends TileFrameTransfer implements IEnergyHandler, IPowerReceptor, IPeripheral, SimpleComponent
+public class TileTransferEnergy extends TileFrameTransfer implements IEnergyHandler, IPowerReceptor, IPowerEmitter, IPeripheral, SimpleComponent
 {
     public final EnergyStorage storage = new EnergyStorage(16000);
     public final PowerHandler mjHandler;
+    public ForgeDirection orientation = ForgeDirection.UP;
 
     int tickTimer = 20, time = 0;
 
     IEnergyHandler[] handlers = new IEnergyHandler[6];
+    PowerReceiver[] powerRecievers = new PowerReceiver[6];
 
     boolean cached = false;
 
@@ -46,7 +49,7 @@ public class TileTransferEnergy extends TileFrameTransfer implements IEnergyHand
     public TileTransferEnergy()
     {
         mjHandler = new PowerHandler(this, Type.MACHINE);
-        mjHandler.configure(2.0f, 32.0f, 2.0f, storage.getMaxEnergyStored() / CommonProxy.RF_PER_MJ);
+        mjHandler.configure(2.0f, 32.0f, 2.0f, ((double) storage.getMaxEnergyStored()) / CommonProxy.RF_PER_MJ);
         mjHandler.configurePowerPerdition(0, 0);
     }
 
@@ -113,6 +116,7 @@ public class TileTransferEnergy extends TileFrameTransfer implements IEnergyHand
     {
         return true;
     }
+    
 
     @Override
     @Method(modid = EnhancedPortals.MODID_COMPUTERCRAFT)
@@ -120,12 +124,17 @@ public class TileTransferEnergy extends TileFrameTransfer implements IEnergyHand
     {
 
     }
+    
+    @Override
+	public boolean canEmitPowerFrom(ForgeDirection side) {
+		return true;
+	}
 
     @Override
     public void doWork(PowerHandler workProvider)
     {
-        int acceptedEnergy = storage.receiveEnergy((int) (mjHandler.useEnergy(1.0F, storage.getMaxEnergyStored() / CommonProxy.RF_PER_MJ, false) * CommonProxy.RF_PER_MJ), false);
-        mjHandler.useEnergy(1.0F, acceptedEnergy / CommonProxy.RF_PER_MJ, true);
+        int acceptedEnergy = storage.receiveEnergy((int) (mjHandler.useEnergy(1.0F, ((double) storage.getMaxEnergyStored()) / CommonProxy.RF_PER_MJ, false) * CommonProxy.RF_PER_MJ), false);
+        mjHandler.useEnergy(1.0F, ((double) acceptedEnergy) / CommonProxy.RF_PER_MJ, true);
     }
 
     @Override
@@ -228,12 +237,16 @@ public class TileTransferEnergy extends TileFrameTransfer implements IEnergyHand
 
     void transferEnergy(int side)
     {
-        if (handlers[side] == null)
+        if (handlers[side] != null)
         {
-            return;
+        	storage.extractEnergy(handlers[side].receiveEnergy(ForgeDirection.getOrientation(side).getOpposite(), storage.getEnergyStored(), false), false);
+        }
+        else if(powerRecievers[side] != null)
+        {
+        	storage.extractEnergy((int) (powerRecievers[side].receiveEnergy(Type.ENGINE, ((double) storage.getEnergyStored()) / CommonProxy.RF_PER_MJ, ForgeDirection.getOrientation(side).getOpposite())) * CommonProxy.RF_PER_MJ, false);
         }
 
-        storage.extractEnergy(handlers[side].receiveEnergy(ForgeDirection.getOrientation(side).getOpposite(), storage.getEnergyStored(), false), false);
+        
     }
 
     void updateEnergyHandlers()
@@ -243,7 +256,7 @@ public class TileTransferEnergy extends TileFrameTransfer implements IEnergyHand
             ChunkCoordinates c = GeneralUtils.offset(getChunkCoordinates(), ForgeDirection.getOrientation(i));
             TileEntity tile = worldObj.getTileEntity(c.posX, c.posY, c.posZ);
 
-            if (tile != null && tile instanceof IEnergyHandler)
+            if (tile != null && tile instanceof IEnergyHandler  )
             {
                 IEnergyHandler energy = (IEnergyHandler) tile;
 
@@ -256,9 +269,22 @@ public class TileTransferEnergy extends TileFrameTransfer implements IEnergyHand
                     handlers[i] = null;
                 }
             }
+            else if (tile != null && tile instanceof IPowerReceptor  )
+            {
+            	PowerReceiver receptor = ((IPowerReceptor)tile).getPowerReceiver(ForgeDirection.getOrientation(i).getOpposite());
+            	if(receptor != null)
+            	{
+            		powerRecievers[i] = receptor;
+            	}
+            	else
+                {
+            		powerRecievers[i] = null;
+                }
+            }
             else
             {
                 handlers[i] = null;
+                powerRecievers[i] = null;
             }
         }
 
@@ -338,4 +364,7 @@ public class TileTransferEnergy extends TileFrameTransfer implements IEnergyHand
         super.writeToNBT(nbt);
         storage.writeToNBT(nbt);
     }
+    
+
+
 }
